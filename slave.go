@@ -58,16 +58,17 @@ func NewSlave(uri string, opts ...Options) (s *Slave, err error) {
 }
 
 func (s *Slave) parseOptions(uri string, options Options) (err error) {
-
+	var uid uuid.UUID
 	if len(options.UUID) == 0 {
-		s.UUID = uuid.NewV1().String()
+		uid, err = uuid.NewV1()
+		s.UUID = uid.String()
 	} else {
 		s.UUID = options.UUID
 	}
 
 	s.ReplicaSet.UUID = options.ReplicaSetUUID
 
-	return nil
+	return
 }
 
 // Attach Slave to Replica Set and subscribe for the new(!) DML requests.
