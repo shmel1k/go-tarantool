@@ -73,6 +73,37 @@ func (conn *Connection) doExecute(ctx context.Context, r *request) (*BinaryPacke
 }
 
 func (conn *Connection) Exec(ctx context.Context, q Query) *Result {
+	pp, code, err := conn.ExecuteRaw(ctx, q)
+	if code != 0 && err != nil {
+		return &Result{
+			Error:     err,
+			ErrorCode: code,
+		}
+	}
+	defer pp.Release()
+
+	var result *Result
+	if err := pp.packet.UnmarshalBinary(pp.body); err != nil {
+		result = &Result{
+			Error:     fmt.Errorf("Error decoding packet type %d: %s", pp.packet.Cmd, err),
+			ErrorCode: ErrInvalidMsgpack,
+		}
+	} else {
+		result = pp.packet.Result
+		if result == nil {
+			result = &Result{}
+		}
+	}
+
+	return result
+}
+
+func (conn *Connection) Execute(q Query) ([][]interface{}, error) {
+	res := conn.Exec(context.Background(), q)
+	return res.Data, res.Error
+}
+
+func (conn *Connection) ExecuteRaw(ctx context.Context, q Query) (*BinaryPacket, uint, error) {
 	var cancel context.CancelFunc = func() {}
 
 	request := &request{
@@ -88,34 +119,12 @@ func (conn *Connection) Exec(ctx context.Context, q Query) *Result {
 	cancel()
 
 	if rerr != nil {
-		return rerr
+		return nil, rerr.ErrorCode, rerr.Error
 	}
 
 	if pp == nil {
-		return &Result{
-			Error:     ConnectionClosedError(conn),
-			ErrorCode: ErrNoConnection,
-		}
+		return nil, ErrNoConnection, ConnectionClosedError(conn)
 	}
 
-	var result *Result
-	if err := pp.packet.UnmarshalBinary(pp.body); err != nil {
-		result = &Result{
-			Error:     fmt.Errorf("Error decoding packet type %d: %s", pp.packet.Cmd, err),
-			ErrorCode: ErrInvalidMsgpack,
-		}
-	} else {
-		result = pp.packet.Result
-		if result == nil {
-			result = &Result{}
-		}
-	}
-	pp.Release()
-
-	return result
-}
-
-func (conn *Connection) Execute(q Query) ([][]interface{}, error) {
-	res := conn.Exec(context.Background(), q)
-	return res.Data, res.Error
+	return pp, 0, nil
 }
